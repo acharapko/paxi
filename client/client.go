@@ -5,11 +5,12 @@ import (
 	"flag"
 
 	"github.com/ailidani/paxi"
+	"github.com/ailidani/paxi/chain"
 	"github.com/ailidani/paxi/paxos"
 )
 
 var id = flag.String("id", "", "node id this client connects to")
-var algorithm = flag.String("algorithm", "", "Client API type [paxos]")
+var algorithm = flag.String("algorithm", "", "Client API type [paxos, chain]")
 var load = flag.Bool("load", false, "Load K keys into DB")
 var master = flag.String("master", "", "Master address.")
 
@@ -55,6 +56,8 @@ func main() {
 	switch *algorithm {
 	case "paxos":
 		d.Client = paxos.NewClient(paxi.ID(*id))
+	case "chain":
+		d.Client = chain.NewClient()
 	default:
 		d.Client = paxi.NewHTTPClient(paxi.ID(*id))
 	}

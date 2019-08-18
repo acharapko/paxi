@@ -7,8 +7,10 @@ import (
 	"github.com/ailidani/paxi"
 	"github.com/ailidani/paxi/abd"
 	"github.com/ailidani/paxi/blockchain"
+	"github.com/ailidani/paxi/chain"
 	"github.com/ailidani/paxi/dynamo"
 	"github.com/ailidani/paxi/epaxos"
+	"github.com/ailidani/paxi/hpaxos"
 	"github.com/ailidani/paxi/kpaxos"
 	"github.com/ailidani/paxi/log"
 	"github.com/ailidani/paxi/m2paxos"
@@ -21,7 +23,7 @@ import (
 	"github.com/ailidani/paxi/bigpaxos"
 )
 
-var algorithm = flag.String("algorithm", "bigpaxos", "Distributed algorithm")
+var algorithm = flag.String("algorithm", "paxos", "Distributed algorithm")
 var id = flag.String("id", "", "ID in format of Zone.Node.")
 var simulation = flag.Bool("sim", false, "simulation mode")
 
@@ -51,6 +53,9 @@ func replica(id paxi.ID) {
 	case "abd":
 		abd.NewReplica(id).Run()
 
+	case "chain":
+		chain.NewReplica(id).Run()
+
 	case "vpaxos":
 		vpaxos.NewReplica(id).Run()
 
@@ -74,6 +79,9 @@ func replica(id paxi.ID) {
 
 	case "bigpaxos":
 		bigpaxos.NewReplica(id).Run()
+
+	case "hpaxos":
+		hpaxos.NewReplica(id).Run()
 
 	default:
 		panic("Unknown algorithm")
