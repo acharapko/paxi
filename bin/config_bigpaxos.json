@@ -1,0 +1,47 @@
+{
+    "address": {
+        "1.1": "tcp://10.0.0.4:1735",
+        "1.2": "tcp://10.0.0.4:1736",
+        "2.1": "tcp://10.0.0.6:1737",
+        "2.2": "tcp://10.0.0.6:1738",
+        "3.1": "tcp://10.0.0.7:1739",
+        "3.2": "tcp://10.0.0.7:1740",
+        "4.1": "tcp://10.0.0.9:1741",
+        "4.2": "tcp://10.0.0.9:1742"
+    },
+    "http_address": {
+        "1.1": "http://10.0.0.4:8080",
+        "1.2": "http://10.0.0.4:8081",
+        "2.1": "http://10.0.0.6:8082",
+        "2.2": "http://10.0.0.6:8083",
+        "3.1": "http://10.0.0.7:8084",
+        "3.2": "http://10.0.0.7:8085",
+        "4.1": "http://10.0.0.9:8086",
+        "4.2": "http://10.0.0.9:8087"
+    },
+    "policy": "majority",
+    "threshold": 3,
+    "thrifty": false,
+    "chan_buffer_size": 1024,
+    "buffer_size": 1024,
+    "multiversion": false,
+    "benchmark": {
+        "T": 30,
+        "N": 0,
+        "K": 1000,
+        "W": 0.5,
+        "Throttle": 1000,
+        "Concurrency": 6,
+        "Distribution": "uniform",
+        "LinearizabilityCheck": true,
+        "Conflicts": 0,
+        "Min": 0,
+        "Mu": 500,
+        "Sigma": 50,
+        "Move": false,
+        "Speed": 10,
+        "Zipfian_s": 2,
+        "Zipfian_v": 1,
+        "Lambda": 0.01
+    }
+}
