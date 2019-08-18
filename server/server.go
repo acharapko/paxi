@@ -18,9 +18,10 @@ import (
 	"github.com/ailidani/paxi/vpaxos"
 	"github.com/ailidani/paxi/wankeeper"
 	"github.com/ailidani/paxi/wpaxos"
+	"github.com/ailidani/paxi/bigpaxos"
 )
 
-var algorithm = flag.String("algorithm", "paxos", "Distributed algorithm")
+var algorithm = flag.String("algorithm", "bigpaxos", "Distributed algorithm")
 var id = flag.String("id", "", "ID in format of Zone.Node.")
 var simulation = flag.Bool("sim", false, "simulation mode")
 
@@ -31,7 +32,7 @@ func replica(id paxi.ID) {
 		paxi.ConnectToMaster(*master, false, id)
 	}
 
-	log.Infof("node %v starting...", id)
+	log.Infof("node %v starting with algorithm...", id, algorithm)
 
 	switch *algorithm {
 
@@ -70,6 +71,9 @@ func replica(id paxi.ID) {
 
 	case "m2paxos":
 		m2paxos.NewReplica(id).Run()
+
+	case "bigpaxos":
+		bigpaxos.NewReplica(id).Run()
 
 	default:
 		panic("Unknown algorithm")

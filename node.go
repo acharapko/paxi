@@ -18,6 +18,7 @@ type Node interface {
 	Retry(r Request)
 	Forward(id ID, r Request)
 	Register(m interface{}, f interface{})
+	HandleMsg(m interface{})
 }
 
 // node implements Node interface
@@ -104,14 +105,18 @@ func (n *node) recv() {
 func (n *node) handle() {
 	for {
 		msg := <-n.MessageChan
-		v := reflect.ValueOf(msg)
-		name := v.Type().String()
-		f, exists := n.handles[name]
-		if !exists {
-			log.Fatalf("no registered handle function for message type %v", name)
-		}
-		f.Call([]reflect.Value{v})
+		n.HandleMsg(msg)
 	}
+}
+
+func (n *node) HandleMsg(msg interface{}) {
+	v := reflect.ValueOf(msg)
+	name := v.Type().String()
+	f, exists := n.handles[name]
+	if !exists {
+		log.Fatalf("no registered handle function for message type %v", name)
+	}
+	f.Call([]reflect.Value{v})
 }
 
 /*
