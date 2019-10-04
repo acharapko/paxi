@@ -34,7 +34,7 @@ func replica(id paxi.ID) {
 		paxi.ConnectToMaster(*master, false, id)
 	}
 
-	log.Infof("node %v starting with algorithm...", id, algorithm)
+	log.Infof("node %v starting with algorithm %s", id, *algorithm)
 
 	switch *algorithm {
 

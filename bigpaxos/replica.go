@@ -31,6 +31,7 @@ type Replica struct {
 	*BigPaxos
 	peerGroups            		[][]paxi.ID
 	myPeerGroup           		int
+	numPeerGroups				int
 	p1bRelays			  		[]P1b
 	pendingP1bRelay		  		int64
 	p2bRelaysMapByBalSlot 		map[int]*P2b
@@ -64,6 +65,7 @@ func NewReplica(id paxi.ID) *Replica {
 	for id := range paxi.GetConfig().Addrs {
 		knownIDs = append(knownIDs, id)
 	}
+
 	sort.Slice(knownIDs, func(i, j int) bool {
 		return knownIDs[i].Zone() < knownIDs[j].Zone() ||
 			(knownIDs[i].Zone() == knownIDs[j].Zone() && knownIDs[i].Node() < knownIDs[j].Node())
@@ -72,9 +74,10 @@ func NewReplica(id paxi.ID) *Replica {
 	log.Debugf("Known IDs : %v", knownIDs)
 
 	if !*regionPeerGroups {
-		r.peerGroups = make([][]paxi.ID, *pg)
+		r.numPeerGroups = *pg;
+		r.peerGroups = make([][]paxi.ID, r.numPeerGroups)
 		log.Debugf("len(pg) : %d", len(r.peerGroups))
-		nodesPerGroup := len(knownIDs) / *pg
+		nodesPerGroup := len(knownIDs) / r.numPeerGroups
 		pgNum := 0
 		r.peerGroups[pgNum] = make([]paxi.ID, 0)
 		nodesAddToPg := 0
@@ -85,33 +88,27 @@ func NewReplica(id paxi.ID) *Replica {
 
 			r.peerGroups[pgNum] = append(r.peerGroups[pgNum], id)
 			nodesAddToPg++
-			if (nodesAddToPg >= nodesPerGroup && pgNum+1 < *pg) {
+			if (nodesAddToPg >= nodesPerGroup && pgNum+1 < r.numPeerGroups) {
 				pgNum++
 				nodesAddToPg = 0
 				r.peerGroups[pgNum] = make([]paxi.ID, 0)
 			}
 		}
+
 		log.Debugf("BigPaxos computed PeerGroups: {%v}", r.peerGroups)
 	} else {
-		r.peerGroups = make([][]paxi.ID, paxi.GetConfig().Z())
-		prevZoneId := -1
+		r.numPeerGroups = paxi.GetConfig().Z()
+		r.peerGroups = make([][]paxi.ID, r.numPeerGroups)
+		r.myPeerGroup = r.ID().Zone() - 1
 		for _, id := range knownIDs {
-			if prevZoneId == -1 {
-			    prevZoneId = id.Zone()
-			}
-
-			pgNum := 0
-			if id == r.ID() {
-				r.myPeerGroup = pgNum
+			pgNum := id.Zone() - 1
+			if r.peerGroups[pgNum] == nil {
+				r.peerGroups[pgNum] = make([]paxi.ID, 0)
 			}
 
 			r.peerGroups[pgNum] = append(r.peerGroups[pgNum], id)
-			if (prevZoneId < id.Zone()) {
-				pgNum++
-				prevZoneId = id.Zone()
-				r.peerGroups[pgNum] = make([]paxi.ID, 0)
-			}
 		}
+
 		log.Debugf("BigPaxos computed PeerGroups: {%v}", r.peerGroups)
 	}
 
@@ -123,7 +120,7 @@ func NewReplica(id paxi.ID) *Replica {
 func (r *Replica) startTicker() {
 	for now := range time.Tick(10 * time.Millisecond) {
 		timeoutCutoffTime := now.Add(-time.Duration(*stdTimeout) * time.Millisecond).UnixNano() // everything older than this needs to timeout
-		log.Debugf("Start TimeoutChecker (timeout_cutoff = %d)", timeoutCutoffTime)
+		//log.Debugf("Start TimeoutChecker (timeout_cutoff = %d)", timeoutCutoffTime)
 		if r.IsLeader() {
 			r.CheckTimeout(timeoutCutoffTime)
 		} else {
@@ -162,34 +159,31 @@ func (r *Replica) Broadcast(m interface{}) {
 	case P1a:
 		m.Source = r.ID()
 		m.Depth = 0
-		for i := 0; i < *pg; i++ {
+		for i := 0; i < r.numPeerGroups; i++ {
 			randId := r.peerGroups[i][rand.Intn(len(r.peerGroups[i]))]
 			for randId == r.ID() {
 				randId = r.peerGroups[i][rand.Intn(len(r.peerGroups[i]))]
 			}
-			log.Debugf("BigPaxos Broadcast. Sending {%v} to PeerGroup %d, node %v", m, i, randId)
 			r.Send(randId, m)
 		}
 	case P2a:
 		m.Source = r.ID()
 		m.Depth = 0
-		for i := 0; i < *pg; i++ {
+		for i := 0; i < r.numPeerGroups; i++ {
 			randId := r.peerGroups[i][rand.Intn(len(r.peerGroups[i]))]
 			for randId == r.ID() {
 				randId = r.peerGroups[i][rand.Intn(len(r.peerGroups[i]))]
 			}
-			log.Debugf("BigPaxos Broadcast. Sending {%v} to PeerGroup %d, node %v", m, i, randId)
 			r.Send(randId, m)
 		}
 	case P3:
 		m.Source = r.ID()
 		m.Depth = 0
-		for i := 0; i < *pg; i++ {
+		for i := 0; i < r.numPeerGroups; i++ {
 			randId := r.peerGroups[i][rand.Intn(len(r.peerGroups[i]))]
 			for randId == r.ID() {
 				randId = r.peerGroups[i][rand.Intn(len(r.peerGroups[i]))]
 			}
-			log.Debugf("BigPaxos Broadcast. Sending {%v} to PeerGroup %d, node %v", m, i, randId)
 			r.Send(randId, m)
 		}
 
@@ -373,6 +367,11 @@ func (r *Replica) handleP2b(m P2b) {
 }
 
 func (r *Replica) readyToRelayP2b(m int) bool {
+	r.RLock()
+	defer r.RUnlock()
+	if r.p2bRelaysMapByBalSlot[m] == nil {
+		return false
+	}
 	if len(r.p2bRelaysMapByBalSlot[m].ID) == len(r.peerGroups[r.myPeerGroup])  {
 		return true
 	}

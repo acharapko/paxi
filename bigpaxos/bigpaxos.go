@@ -4,6 +4,8 @@ import (
 	"time"
 
 	"github.com/ailidani/paxi"
+	"sync"
+	"github.com/ailidani/paxi/log"
 )
 
 // entry in log
@@ -35,6 +37,8 @@ type BigPaxos struct {
 	Q1              func(*paxi.Quorum) bool
 	Q2              func(*paxi.Quorum) bool
 	ReplyWhenCommit bool
+
+	logLck	sync.RWMutex
 }
 
 // NewPaxos creates new paxos instance
@@ -63,10 +67,13 @@ func (p *BigPaxos) IsLeader() bool {
 }
 
 func (p *BigPaxos) CheckTimeout(timeout int64) {
-	if p.active && p.execute < p.slot {
-		if entry, ok := p.log[p.execute]; ok {
+	p.logLck.RLock()
+	defer p.logLck.RUnlock()
+	execslot := p.execute
+	if p.active && execslot < p.slot {
+		if entry, ok := p.log[execslot]; ok {
 			if entry.timestamp.UnixNano() < timeout {
-				p.RetryP2a(p.execute)
+				p.RetryP2a(execslot)
 			}
 		}
 	} else if !p.active && p.p1aTime < timeout {
@@ -133,6 +140,8 @@ func (p *BigPaxos) RetryP1a() {
 // P2a starts phase 2 accept
 func (p *BigPaxos) P2a(r *paxi.Request) {
 	p.slot++
+	log.Debugf("Entering P2a with slot %d", p.slot)
+	p.logLck.Lock()
 	p.log[p.slot] = &entry{
 		ballot:    p.ballot,
 		command:   r.Command,
@@ -141,6 +150,7 @@ func (p *BigPaxos) P2a(r *paxi.Request) {
 		timestamp: time.Now(),
 	}
 	p.log[p.slot].quorum.ACK(p.ID())
+	p.logLck.Unlock()
 	m := P2a{
 		Ballot:  p.ballot,
 		Slot:    p.slot,
@@ -151,10 +161,14 @@ func (p *BigPaxos) P2a(r *paxi.Request) {
 	} else {
 		p.Broadcast(m)
 	}
+	log.Debugf("Leaving P2a with slot %d", p.slot)
 }
 
 func (p *BigPaxos) RetryP2a(slot int) {
-	if entry, ok := p.log[slot]; ok {
+	p.logLck.RLock()
+	entry, ok := p.log[slot]
+	p.logLck.RUnlock()
+	if ok {
 		m := P2a{
 			Ballot:  p.ballot,
 			Slot:    p.slot,
@@ -170,7 +184,7 @@ func (p *BigPaxos) RetryP2a(slot int) {
 
 // HandleP1a handles P1a message
 func (p *BigPaxos) HandleP1a(m P1a) {
-	// log.Debugf("Replica %s ===[%v]===>>> Replica %s\n", m.Ballot.ID(), m, p.ID())
+	log.Debugf("Replica %s ===[%v]===>>> Replica %s\n", m.Ballot.ID(), m, p.ID())
 
 	// new leader
 	if m.Ballot > p.ballot {
@@ -180,21 +194,26 @@ func (p *BigPaxos) HandleP1a(m P1a) {
 	}
 
 	l := make(map[int]CommandBallot)
+	p.logLck.RLock()
 	for s := p.execute; s <= p.slot; s++ {
 		if p.log[s] == nil || p.log[s].commit {
 			continue
 		}
 		l[s] = CommandBallot{p.log[s].command, p.log[s].ballot}
 	}
+	p.logLck.RUnlock()
 
 	p.Send(m.Source, P1b{
 		Ballot: p.ballot,
 		ID:     p.ID(),
 		Log:    l,
 	})
+	log.Debugf("Leaving HandleP1a")
 }
 
 func (p *BigPaxos) update(scb map[int]CommandBallot) {
+	p.logLck.Lock()
+	defer p.logLck.Unlock()
 	for s, cb := range scb {
 		p.slot = paxi.Max(p.slot, s)
 		if e, exists := p.log[s]; exists {
@@ -236,6 +255,7 @@ func (p *BigPaxos) HandleP1b(m P1b) {
 		if p.Q1(p.quorum) {
 			p.active = true
 			// propose any uncommitted entries
+			p.logLck.Lock()
 			for i := p.execute; i <= p.slot; i++ {
 				// TODO nil gap?
 				if p.log[i] == nil || p.log[i].commit {
@@ -250,6 +270,7 @@ func (p *BigPaxos) HandleP1b(m P1b) {
 					Command: p.log[i].command,
 				})
 			}
+			p.logLck.Unlock()
 			// propose new commands
 			for _, req := range p.requests {
 				p.P2a(req)
@@ -261,7 +282,7 @@ func (p *BigPaxos) HandleP1b(m P1b) {
 
 // HandleP2a handles P2a message
 func (p *BigPaxos) HandleP2a(m P2a) {
-	// log.Debugf("Replica %s ===[%v]===>>> Replica %s\n", m.Ballot.ID(), m, p.ID())
+	log.Debugf("Replica %s ===[%v]===>>> Replica %s\n", m.Ballot.ID(), m, p.ID())
 
 	if m.Ballot >= p.ballot {
 		p.ballot = m.Ballot
@@ -269,6 +290,7 @@ func (p *BigPaxos) HandleP2a(m P2a) {
 		// update slot number
 		p.slot = paxi.Max(p.slot, m.Slot)
 		// update entry
+		p.logLck.Lock()
 		if e, exists := p.log[m.Slot]; exists {
 			if !e.commit && m.Ballot > e.ballot {
 				// different command and request is not nil
@@ -287,6 +309,7 @@ func (p *BigPaxos) HandleP2a(m P2a) {
 				commit:  false,
 			}
 		}
+		p.logLck.Unlock()
 	}
 
 	idList := make([]paxi.ID, 1, 1)
@@ -296,12 +319,16 @@ func (p *BigPaxos) HandleP2a(m P2a) {
 		Slot:   m.Slot,
 		ID:     idList,
 	})
+	log.Debugf("Leaving HandleP2a")
 }
 
 // HandleP2b handles P2b message
 func (p *BigPaxos) HandleP2b(m P2b) {
+	log.Debugf("Entering HandleP1a: %s ===[%v]===>>> %s", m.Ballot.ID(), p.ID())
 	// old message
+	p.logLck.RLock()
 	entry, exist := p.log[m.Slot]
+	p.logLck.RUnlock()
 	if !exist || m.Ballot < entry.ballot || entry.commit {
 		return
 	}
@@ -315,21 +342,21 @@ func (p *BigPaxos) HandleP2b(m P2b) {
 	// ack message
 	// the current slot might still be committed with q2
 	// if no q2 can be formed, this slot will be retried when received p2a or p3
-	if m.Ballot.ID() == p.ID() && m.Ballot == p.log[m.Slot].ballot {
+	if m.Ballot.ID() == p.ID() && m.Ballot == entry.ballot {
 		for _, id := range m.ID {
-			p.log[m.Slot].quorum.ACK(id)
+			entry.quorum.ACK(id)
 		}
 
-		if p.Q2(p.log[m.Slot].quorum) {
-			p.log[m.Slot].commit = true
+		if p.Q2(entry.quorum) {
+			entry.commit = true
 			p.Broadcast(P3{
 				Ballot:  m.Ballot,
 				Slot:    m.Slot,
-				Command: p.log[m.Slot].command,
+				Command: entry.command,
 			})
 
 			if p.ReplyWhenCommit {
-				r := p.log[m.Slot].request
+				r := entry.request
 				r.Reply(paxi.Reply{
 					Command:   r.Command,
 					Timestamp: r.Timestamp,
@@ -339,14 +366,15 @@ func (p *BigPaxos) HandleP2b(m P2b) {
 			}
 		}
 	}
+	log.Debugf("Leaving HandleP2b")
 }
 
 // HandleP3 handles phase 3 commit message
 func (p *BigPaxos) HandleP3(m P3) {
-	// log.Debugf("Replica %s ===[%v]===>>> Replica %s\n", m.Ballot.ID(), m, p.ID())
+	log.Debugf("Replica %s ===[%v]===>>> Replica %s\n", m.Ballot.ID(), m, p.ID())
 
 	p.slot = paxi.Max(p.slot, m.Slot)
-
+	p.logLck.Lock()
 	e, exist := p.log[m.Slot]
 	if exist {
 		if !e.command.Equal(m.Command) && e.request != nil {
@@ -358,6 +386,7 @@ func (p *BigPaxos) HandleP3(m P3) {
 		p.log[m.Slot] = &entry{}
 		e = p.log[m.Slot]
 	}
+	p.logLck.Unlock()
 
 	e.command = m.Command
 	e.commit = true
@@ -372,9 +401,13 @@ func (p *BigPaxos) HandleP3(m P3) {
 	} else {
 		p.exec()
 	}
+	log.Debugf("Leaving HandleP3")
 }
 
 func (p *BigPaxos) exec() {
+	log.Debugf("Entering exec. exec slot=%d", p.execute)
+	p.logLck.Lock()
+	defer p.logLck.Unlock()
 	for {
 		e, ok := p.log[p.execute]
 		if !ok || !e.commit {
@@ -395,6 +428,7 @@ func (p *BigPaxos) exec() {
 		delete(p.log, p.execute)
 		p.execute++
 	}
+	log.Debugf("Leaving exec")
 }
 
 func (p *BigPaxos) forward() {
