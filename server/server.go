@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"github.com/ailidani/paxi/fastpaxos"
 	"sync"
 
 	"github.com/ailidani/paxi"
@@ -78,6 +79,9 @@ func replica(id paxi.ID) {
 
 	case "hpaxos":
 		hpaxos.NewReplica(id).Run()
+
+	case "fastpaxos":
+		fastpaxos.NewReplica(id).Run()
 
 	default:
 		panic("Unknown algorithm")

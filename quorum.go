@@ -61,9 +61,19 @@ func (q *Quorum) Majority() bool {
 	return q.size > config.n/2
 }
 
+// Majority quorum size
+func (q *Quorum) MajoritySize() int {
+	return config.n / 2 + 1
+}
+
 // FastQuorum from fast paxos
 func (q *Quorum) FastQuorum() bool {
-	return q.size >= config.n*3/4
+	return q.size >= (config.n*3/4) + 1
+}
+
+// Majority quorum size
+func (q *Quorum) FastQuorumSize() int {
+	return (config.n * 3/4) + 1
 }
 
 // AllZones returns true if there is at one ack from each zone

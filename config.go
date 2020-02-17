@@ -22,6 +22,7 @@ type Config struct {
 	BufferSize     int     `json:"buffer_size"`      // buffer size for maps
 	ChanBufferSize int     `json:"chan_buffer_size"` // buffer size for channels
 	MultiVersion   bool    `json:"multiversion"`     // create multi-version database
+	ClientTimeout  int64   `json:"client_timeout"`
 	Benchmark      Bconfig `json:"benchmark"`        // benchmark configuration
 
 	// for future implementation
@@ -60,6 +61,7 @@ func MakeDefaultConfig() Config {
 		BufferSize:     1024,
 		ChanBufferSize: 1024,
 		MultiVersion:   false,
+		ClientTimeout:  10,
 		Benchmark:      DefaultBConfig(),
 	}
 }

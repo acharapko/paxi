@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/binary"
 	"flag"
+	"github.com/ailidani/paxi/fastpaxos"
 
 	"github.com/ailidani/paxi"
 	"github.com/ailidani/paxi/chain"
@@ -10,7 +11,7 @@ import (
 )
 
 var id = flag.String("id", "", "node id this client connects to")
-var algorithm = flag.String("algorithm", "", "Client API type [paxos, chain]")
+var algorithm = flag.String("algorithm", "", "Client API type [paxos, fastpaxos, chain]")
 var load = flag.Bool("load", false, "Load K keys into DB")
 var master = flag.String("master", "", "Master address.")
 
@@ -31,7 +32,7 @@ func (d *db) Read(k int) (int, error) {
 	key := paxi.Key(k)
 	v, err := d.Get(key)
 	if len(v) == 0 {
-		return 0, nil
+		return 0, err
 	}
 	x, _ := binary.Uvarint(v)
 	return int(x), err
@@ -56,6 +57,8 @@ func main() {
 	switch *algorithm {
 	case "paxos":
 		d.Client = paxos.NewClient(paxi.ID(*id))
+	case "fastpaxos":
+		d.Client = fastpaxos.NewClient(paxi.ID(*id))
 	case "chain":
 		d.Client = chain.NewClient()
 	default:

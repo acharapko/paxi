@@ -4,15 +4,14 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"github.com/ailidani/paxi/lib"
+	"github.com/ailidani/paxi/log"
 	"io"
 	"io/ioutil"
 	"net/http"
 	"net/http/httputil"
 	"strconv"
 	"sync"
-
-	"github.com/ailidani/paxi/lib"
-	"github.com/ailidani/paxi/log"
 )
 
 // Client interface provides get and put for key value store
@@ -39,6 +38,8 @@ type HTTPClient struct {
 
 	CID int // command id
 	*http.Client
+
+	cidlock sync.RWMutex
 }
 
 // NewHTTPClient creates a new Client from config
@@ -48,7 +49,8 @@ func NewHTTPClient(id ID) *HTTPClient {
 		N:      len(config.Addrs),
 		Addrs:  config.Addrs,
 		HTTP:   config.HTTPAddrs,
-		Client: &http.Client{},
+		CID:    0,
+		Client: &http.Client{/*Timeout: time.Duration(config.ClientTimeout) * time.Millisecond*/},
 	}
 	if id != "" {
 		i := 0
@@ -63,10 +65,24 @@ func NewHTTPClient(id ID) *HTTPClient {
 	return c
 }
 
+func (c *HTTPClient) IncrementCID() int {
+	c.cidlock.Lock()
+	defer c.cidlock.Unlock()
+	c.CID += 1
+	return c.CID
+}
+
+func (c *HTTPClient) GetCID() int {
+	c.cidlock.RLock()
+	defer c.cidlock.RUnlock()
+	return c.CID
+}
+
+
 // Get gets value of given key (use REST)
 // Default implementation of Client interface
 func (c *HTTPClient) Get(key Key) (Value, error) {
-	c.CID++
+	c.IncrementCID()
 	v, _, err := c.RESTGet(c.ID, key)
 	return v, err
 }
@@ -74,7 +90,7 @@ func (c *HTTPClient) Get(key Key) (Value, error) {
 // Put puts new key value pair and return previous value (use REST)
 // Default implementation of Client interface
 func (c *HTTPClient) Put(key Key, value Value) error {
-	c.CID++
+	c.IncrementCID()
 	_, _, err := c.RESTPut(c.ID, key, value)
 	return err
 }
@@ -92,7 +108,7 @@ func (c *HTTPClient) GetURL(id ID, key Key) string {
 
 // rest accesses server's REST API with url = http://ip:port/key
 // if value == nil, it's a read
-func (c *HTTPClient) rest(id ID, key Key, value Value) (Value, map[string]string, error) {
+func (c *HTTPClient) rest(id ID, key Key, value Value, cid int) (Value, map[string]string, error) {
 	// get url
 	url := c.GetURL(id, key)
 
@@ -108,7 +124,7 @@ func (c *HTTPClient) rest(id ID, key Key, value Value) (Value, map[string]string
 		return nil, nil, err
 	}
 	req.Header.Set(HTTPClientID, string(c.ID))
-	req.Header.Set(HTTPCommandID, strconv.Itoa(c.CID))
+	req.Header.Set(HTTPCommandID, strconv.Itoa(cid))
 	// r.Header.Set(HTTPTimestamp, strconv.FormatInt(time.Now().UnixNano(), 10))
 
 	rep, err := c.Client.Do(req)
@@ -146,12 +162,22 @@ func (c *HTTPClient) rest(id ID, key Key, value Value) (Value, map[string]string
 
 // RESTGet issues a http call to node and return value and headers
 func (c *HTTPClient) RESTGet(id ID, key Key) (Value, map[string]string, error) {
-	return c.rest(id, key, nil)
+	return c.rest(id, key, nil, c.GetCID())
 }
 
 // RESTPut puts new value as http.request body and return previous value
 func (c *HTTPClient) RESTPut(id ID, key Key, value Value) (Value, map[string]string, error) {
-	return c.rest(id, key, value)
+	return c.rest(id, key, value, c.GetCID())
+}
+
+// RESTGet issues a http call to node and return value and headers
+func (c *HTTPClient) RESTGetWithCid(id ID, key Key, cid int) (Value, map[string]string, error) {
+	return c.rest(id, key, nil, cid)
+}
+
+// RESTPut puts new value as http.request body and return previous value
+func (c *HTTPClient) RESTPutWithCid(id ID, key Key, value Value, cid int) (Value, map[string]string, error) {
+	return c.rest(id, key, value, cid)
 }
 
 func (c *HTTPClient) json(id ID, key Key, value Value) (Value, error) {
@@ -160,7 +186,7 @@ func (c *HTTPClient) json(id ID, key Key, value Value) (Value, error) {
 		Key:       key,
 		Value:     value,
 		ClientID:  c.ID,
-		CommandID: c.CID,
+		CommandID: c.GetCID(),
 	}
 	data, err := json.Marshal(cmd)
 	res, err := c.Client.Post(url, "json", bytes.NewBuffer(data))
@@ -201,7 +227,7 @@ func (c *HTTPClient) MultiGet(n int, key Key) ([]Value, []map[string]string) {
 	i := 0
 	for id := range c.HTTP {
 		go func(id ID) {
-			v, meta, err := c.rest(id, key, nil)
+			v, meta, err := c.rest(id, key, nil, c.GetCID())
 			if err != nil {
 				log.Error(err)
 				return
@@ -237,7 +263,7 @@ func (c *HTTPClient) LocalQuorumGet(key Key) ([]Value, []map[string]string) {
 			break
 		}
 		go func(id ID) {
-			v, meta, err := c.rest(id, key, nil)
+			v, meta, err := c.rest(id, key, nil, c.GetCID())
 			if err != nil {
 				log.Error(err)
 				return
@@ -268,7 +294,7 @@ func (c *HTTPClient) QuorumPut(key Key, value Value) {
 		}
 		wait.Add(1)
 		go func(id ID) {
-			c.rest(id, key, value)
+			c.rest(id, key, value, c.GetCID())
 			wait.Done()
 		}(id)
 	}

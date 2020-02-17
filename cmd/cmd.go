@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
+	"github.com/ailidani/paxi/fastpaxos"
 	"os"
 	"strconv"
 	"strings"
@@ -112,6 +113,9 @@ func main() {
 	switch *algorithm {
 	case "paxos":
 		client = paxos.NewClient(paxi.ID(*id))
+
+	case "fastpaxos":
+		client = fastpaxos.NewClient(paxi.ID(*id))
 
 	case "chain":
 		client = chain.NewClient()

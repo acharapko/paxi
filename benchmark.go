@@ -1,7 +1,6 @@
 package paxi
 
 import (
-	"math"
 	"math/rand"
 	"sync"
 	"time"
@@ -31,6 +30,7 @@ type Bconfig struct {
 
 	// conflict distribution
 	Conflicts int // percentage of conflicting keys
+	CIDConflicts int // percentage of conflicting command IDs
 	Min       int // min key
 
 	// normal distribution
@@ -59,6 +59,7 @@ func DefaultBConfig() Bconfig {
 		Distribution:         "uniform",
 		LinearizabilityCheck: true,
 		Conflicts:            100,
+		CIDConflicts:         0,
 		Min:                  0,
 		Mu:                   0,
 		Sigma:                60,
@@ -82,6 +83,8 @@ type Benchmark struct {
 	zipf      *rand.Zipf
 	counter   int
 
+	numErrs	  int
+
 	wait sync.WaitGroup // waiting for all generated keys to complete
 }
 
@@ -91,6 +94,7 @@ func NewBenchmark(db DB) *Benchmark {
 	b.db = db
 	b.Bconfig = config.Benchmark
 	b.History = NewHistory()
+	b.numErrs = 0
 	if b.Throttle > 0 {
 		b.rate = NewLimiter(b.Throttle)
 	}
@@ -181,6 +185,7 @@ func (b *Benchmark) Run() {
 	log.Infof("Number of Keys = %d", b.K)
 	log.Infof("Benchmark Time = %v\n", t)
 	log.Infof("Throughput = %f\n", float64(len(b.latency))/t.Seconds())
+	log.Infof("# of errors not counted in perf = %d\n", b.numErrs)
 	log.Info(stat)
 
 	stat.WriteFile("latency")
@@ -266,11 +271,14 @@ func (b *Benchmark) worker(keys <-chan int, result chan<- time.Duration) {
 		if err == nil {
 			op.end = e.Sub(b.startTime).Nanoseconds()
 			result <- e.Sub(s)
+			b.History.AddOperation(k, op)
+			log.Debugf("Recording op {start: %d, end: %d, in: %v}", op.start, op.end, op.input)
 		} else {
-			op.end = math.MaxInt64
-			log.Error(err)
+			//op.end = math.MaxInt64
+			//log.Error(err)
+			log.Debugf("Err!")
+			b.numErrs += 1
 		}
-		b.History.AddOperation(k, op)
 	}
 }
 

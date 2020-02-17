@@ -10,6 +10,10 @@ import (
 // Socket integrates all networking interface and fault injections
 type Socket interface {
 
+	CountKnownNodes() int
+
+	TryConnectToKnownAddresses() bool
+
 	// Send put message to outbound queue
 	Send(to ID, m interface{})
 
@@ -61,6 +65,27 @@ func NewSocket(id ID, addrs map[ID]string) Socket {
 	socket.nodes[id].Listen()
 
 	return socket
+}
+
+func (s *socket) CountKnownNodes() int {
+	return len(s.nodes)
+}
+
+func (s *socket) TryConnectToKnownAddresses() bool {
+	for to, address := range s.addresses {
+		_, ok := s.nodes[to]
+		if !ok {
+			log.Debugf("Trying to reach to %v", to)
+			t := NewTransport(address)
+			err := Retry(t.Dial, 5, time.Duration(50)*time.Millisecond)
+			if err == nil {
+				s.nodes[to] = t
+			} else {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func (s *socket) Send(to ID, m interface{}) {
