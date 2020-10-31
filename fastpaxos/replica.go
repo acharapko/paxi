@@ -9,7 +9,7 @@ import (
 var p1q = flag.Int("p1q", 0, "phase-1 quorum size")
 var p2qf = flag.Int("p2qf", 0, "phase-2-fast quorum size")
 var p2qc = flag.Int("p2qc", 0, "phase-2-classical quorum size")
-var clientslots = flag.Bool("clientslots", false, "Whether to use slots provided by clints in command ID")
+var clientslots = flag.Bool("clientslots", false, "Whether to use slots provided by clients in command ID")
 
 const (
 	HTTPHeaderLeader    = "Leader"

@@ -49,27 +49,27 @@ func (m P1b) String() string {
 
 // P2a accept message
 type P2a struct {
-	Ballot  paxi.Ballot
-	Subballot int
-	Slot    int
-	Command paxi.Command
+	Ballot      paxi.Ballot
+	ConflictNum int
+	Slot        int
+	Command     paxi.Command
 }
 
 func (m P2a) String() string {
-	return fmt.Sprintf("P2a {b=%v subb=%v s=%d cmd=%v}", m.Ballot, m.Subballot, m.Slot, m.Command)
+	return fmt.Sprintf("P2a {b=%v subb=%v s=%d cmd=%v}", m.Ballot, m.ConflictNum, m.Slot, m.Command)
 }
 
 // P2b accepted message
 type P2b struct {
-	Ballot paxi.Ballot
-	Subballot int
-	Command paxi.Command
-	ID     paxi.ID // from node id
-	Slot   int
+	Ballot     paxi.Ballot
+	ConflicNum int
+	Command    paxi.Command
+	ID         paxi.ID // from node id
+	Slot       int
 }
 
 func (m P2b) String() string {
-	return fmt.Sprintf("P2b {b=%v subb=%v id=%s s=%d, cmd=%v}", m.Ballot, m.Subballot, m.ID, m.Slot, m.Command)
+	return fmt.Sprintf("P2b {b=%v subb=%v id=%s s=%d, cmd=%v}", m.Ballot, m.ConflicNum, m.ID, m.Slot, m.Command)
 }
 
 // P3 commit message

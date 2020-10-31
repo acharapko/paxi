@@ -10,37 +10,37 @@ import (
 	"github.com/ailidani/paxi"
 )
 
+const cleanupSlack int = 100
+
 // entry in log
 type entry struct {
-	ballot    paxi.Ballot
-	subballot int
-	command   paxi.Command
-	commit    bool
-	//request   *paxi.Request
-	quorum    *paxi.Quorum
-	timestamp time.Time
+	ballot      paxi.Ballot
+	conflictNum int  // we use this as a flag to see if we have done a slow path recovery on this entry
+	command     paxi.Command
+	commit      bool
+	quorum      *paxi.Quorum
+	timestamp   time.Time
 }
 
 type p2vote struct {
 	Cmd paxi.Command
 	Q	*paxi.Quorum
-
 }
 
 // Paxos instance
 type FastPaxos struct {
 	paxi.Node
 
-	log     		map[int]*entry // log ordered by slot
-	learnerlog 		map[int]*paxi.Command // log of KVs to reply to client by leader
-	p2bRepliesBySlot map[int][]*p2vote
+	log             map[int]*entry // log ordered by slot
+	learnerlog      map[int]*paxi.Command // log of KVs to reply to client by leader
+	p2bCommandVotes map[int][]*p2vote
 
-	execute 		int            // next execute slot number
-	active  		bool           // active leader
-	ballot  		paxi.Ballot    // highest ballot number
-	subballot		int			   // sub-ballot for conflict recovery
-	IsFastBallot 	bool
-	slot    		int            // highest slot number
+	execute       int         // next execute slot number
+	active        bool        // active leader
+	ballot        paxi.Ballot // highest ballot number
+	conflictTotal int         // count total number of slow path recoveries we have done
+	IsFastBallot  bool
+	slot          int         // highest slot number
 
 	quorum   		*paxi.Quorum    // phase 1 quorum
 	requests 		map[int64]*paxi.Request // pending requests that have not been answered yet
@@ -53,7 +53,7 @@ type FastPaxos struct {
 	Q2fSize			int
 	Q2cSize			int
 
-	useClientSlots  bool
+	useClientSlots  bool // we use this for testing. Let clients set the slots to control the rate of conflict
 
 	ReplyWhenCommit bool
 
@@ -66,8 +66,8 @@ func NewPaxos(n paxi.Node, options ...func(paxos *FastPaxos)) *FastPaxos {
 	p := &FastPaxos{
 		Node:            n,
 		log:             make(map[int]*entry, paxi.GetConfig().BufferSize),
-		learnerlog:		 make(map[int]*paxi.Command, paxi.GetConfig().BufferSize),
-		p2bRepliesBySlot:make(map[int][]*p2vote),
+		learnerlog:      make(map[int]*paxi.Command, paxi.GetConfig().BufferSize),
+		p2bCommandVotes: make(map[int][]*p2vote),
 		slot:            -1,
 		quorum:          paxi.NewQuorum(),
 		requests:        make(map[int64]*paxi.Request, paxi.GetConfig().BufferSize),
@@ -152,7 +152,7 @@ func (p *FastPaxos) cleanUpTicker() {
 	}()
 }
 
-// IsLeader indecates if this node is current leader
+// IsLeader indicates whether this node is current leader
 func (p *FastPaxos) IsLeader() bool {
 	return p.active || p.ballot.ID() == p.ID()
 }
@@ -184,9 +184,9 @@ func (p *FastPaxos) HandleRequest(r paxi.Request) {
 		// and accept them
 		var p2aMsg P2a
 		if p.useClientSlots {
-			p2aMsg = P2a{Ballot: p.ballot, Subballot: 0, Slot: r.Command.CommandID, Command: r.Command}
+			p2aMsg = P2a{Ballot: p.ballot, ConflictNum: 0, Slot: r.Command.CommandID, Command: r.Command}
 		} else {
-			p2aMsg = P2a{Ballot: p.ballot, Subballot: 0, Slot: p.slot + 1, Command: r.Command}
+			p2aMsg = P2a{Ballot: p.ballot, ConflictNum: 0, Slot: p.slot + 1, Command: r.Command}
 		}
 		if p.IsLeader() {
 			p.HandleP2aFastLeader(p2aMsg, &r, tsReq)
@@ -200,9 +200,7 @@ func (p *FastPaxos) HandleRequest(r paxi.Request) {
 			}
 
 			reply.Properties[HTTPHeaderLeader] = strconv.FormatBool(p.IsLeader())
-
 			r.Reply(reply)
-
 		}
 	} else {
 		if !p.active {
@@ -214,16 +212,6 @@ func (p *FastPaxos) HandleRequest(r paxi.Request) {
 			p.P2a(&r)
 		}
 	}
-}
-
-func (p *FastPaxos) checkExecuted(cmd paxi.Command) bool {
-	for exslot := p.execute - 1; exslot > 0 && exslot > p.execute - 100; exslot-- {
-		if p.log[exslot].command.CommandID == cmd.CommandID {
-			return true
-		}
-	}
-
-	return false
 }
 
 // P1a starts phase 1 prepare
@@ -241,18 +229,18 @@ func (p *FastPaxos) P1a() {
 func (p *FastPaxos) P2a(r *paxi.Request) {
 	p.slot++
 	p.log[p.slot] = &entry{
-		ballot:    p.ballot,
-		subballot: 0,
-		command:   r.Command,
-		quorum:    paxi.NewQuorum(),
-		timestamp: time.Now(),
+		ballot:      p.ballot,
+		conflictNum: 0,
+		command:     r.Command,
+		quorum:      paxi.NewQuorum(),
+		timestamp:   time.Now(),
 	}
 	p.log[p.slot].quorum.ACK(p.ID())
 	m := P2a{
-		Ballot:  p.ballot,
-		Subballot: 0,
-		Slot:    p.slot,
-		Command: r.Command,
+		Ballot:      p.ballot,
+		ConflictNum: 0,
+		Slot:        p.slot,
+		Command:     r.Command,
 	}
 	if paxi.GetConfig().Thrifty {
 		p.MulticastQuorum(paxi.GetConfig().N()/2+1, m)
@@ -264,18 +252,18 @@ func (p *FastPaxos) P2a(r *paxi.Request) {
 func (p *FastPaxos) P2aAny() {
 	p.slot++
 	p.log[p.slot] = &entry{
-		ballot:    p.ballot,
-		subballot: 0,
-		command:   paxi.Command{CommandID: -1},
-		quorum:    paxi.NewQuorum(),
-		timestamp: time.Now(),
+		ballot:      p.ballot,
+		conflictNum: 0,
+		command:     paxi.Command{CommandID: -1},
+		quorum:      paxi.NewQuorum(),
+		timestamp:   time.Now(),
 	}
 	p.log[p.slot].quorum.ACK(p.ID())
 	m := P2a{
-		Ballot:  p.ballot,
-		Subballot: 0,
-		Slot:    p.slot,
-		Command: paxi.Command{CommandID: -1},
+		Ballot:      p.ballot,
+		ConflictNum: 0,
+		Slot:        p.slot,
+		Command:     paxi.Command{CommandID: -1},
 	}
 	if paxi.GetConfig().Thrifty {
 		p.MulticastQuorum(paxi.GetConfig().N()/2+1, m)
@@ -289,18 +277,18 @@ func (p *FastPaxos) P2aRetry(cmd *paxi.Command, slot int) {
 	log.Debugf("Replica %s sending P2a for classical round resolution", p.ID())
 
 	p.log[slot] = &entry{
-		ballot:    p.ballot,
-		subballot: p.subballot,
-		command:   *cmd,
-		quorum:    paxi.NewQuorum(),
-		timestamp: time.Now(),
+		ballot:      p.ballot,
+		conflictNum: p.conflictTotal,
+		command:     *cmd,
+		quorum:      paxi.NewQuorum(),
+		timestamp:   time.Now(),
 	}
 	p.log[slot].quorum.ACK(p.ID())
 	m := P2a{
-		Ballot:  p.ballot,
-		Subballot: p.subballot,
-		Slot:    slot,
-		Command: *cmd,
+		Ballot:      p.ballot,
+		ConflictNum: p.conflictTotal,
+		Slot:        slot,
+		Command:     *cmd,
 	}
 	if paxi.GetConfig().Thrifty {
 		p.MulticastQuorum(paxi.GetConfig().N()/2+1, m)
@@ -342,15 +330,15 @@ func (p *FastPaxos) update(scb map[int]CommandBallot) {
 		if e, exists := p.log[s]; exists {
 			if !e.commit && cb.Ballot > e.ballot {
 				e.ballot = cb.Ballot
-				e.subballot = 0
+				e.conflictNum = 0
 				e.command = cb.Command
 			}
 		} else {
 			p.log[s] = &entry{
-				ballot:  	cb.Ballot,
-				subballot: 	0,
-				command: 	cb.Command,
-				commit:  	false,
+				ballot:      cb.Ballot,
+				conflictNum: 0,
+				command:     cb.Command,
+				commit:      false,
 			}
 		}
 	}
@@ -373,9 +361,6 @@ func (p *FastPaxos) HandleP1b(m P1b) {
 		p.ballot = m.Ballot
 		p.active = false // not necessary
 		p.IsFastBallot = false // new ballot, reset fast flag
-		// forward pending requests to new leader
-		// p.forward()
-		// p.P1a()
 	}
 
 	// ack message
@@ -394,10 +379,10 @@ func (p *FastPaxos) HandleP1b(m P1b) {
 				p.log[i].quorum = paxi.NewQuorum()
 				p.log[i].quorum.ACK(p.ID())
 				p.Broadcast(P2a{
-					Ballot:  	p.ballot,
-					Subballot:  0,
-					Slot:    	i,
-					Command: 	p.log[i].command,
+					Ballot:      p.ballot,
+					ConflictNum: 0,
+					Slot:        i,
+					Command:     p.log[i].command,
 				})
 			}
 			// propose ANY
@@ -412,7 +397,7 @@ func (p *FastPaxos) HandleP2a(m P2a) {
 
 	if m.Ballot >= p.ballot {
 		p.ballot = m.Ballot
-		p.subballot = m.Subballot
+		p.conflictTotal = m.ConflictNum
 		p.active = false
 		if m.Ballot > p.ballot {
 			p.IsFastBallot = false // new ballot, reset fast flag
@@ -421,18 +406,18 @@ func (p *FastPaxos) HandleP2a(m P2a) {
 		p.slot = paxi.Max(p.slot, m.Slot)
 		// update entry
 		if e, exists := p.log[m.Slot]; exists {
-			if !e.commit && (m.Ballot > e.ballot || (m.Ballot == e.ballot && m.Subballot > e.subballot)) {
+			if !e.commit && (m.Ballot > e.ballot || (m.Ballot == e.ballot && m.ConflictNum > e.conflictNum)) {
 				// different command
 				e.command = m.Command
 				e.ballot = m.Ballot
-				e.subballot = m.Subballot
+				e.conflictNum = m.ConflictNum
 			}
 		} else {
 			p.log[m.Slot] = &entry{
-				ballot:  	m.Ballot,
-				subballot: 	m.Subballot,
-				command: 	m.Command,
-				commit:  	false,
+				ballot:      m.Ballot,
+				conflictNum: m.ConflictNum,
+				command:     m.Command,
+				commit:      false,
 			}
 		}
 
@@ -442,11 +427,11 @@ func (p *FastPaxos) HandleP2a(m P2a) {
 	}
 
 	p.Send(m.Ballot.ID(), P2b{
-		Ballot: 	p.ballot,
-		Subballot:  m.Subballot,
-		Command: 	m.Command,
-		Slot:  	 	m.Slot,
-		ID:    		p.ID(),
+		Ballot:     p.ballot,
+		ConflicNum: m.ConflictNum,
+		Command:    m.Command,
+		Slot:       m.Slot,
+		ID:         p.ID(),
 	})
 }
 
@@ -463,7 +448,7 @@ func (p *FastPaxos) HandleP2aFastLeader(m P2a, r *paxi.Request, tsReq int64) {
 				// different command and request is not nil
 				e.command = m.Command
 				e.ballot = m.Ballot
-				e.subballot = 0
+				e.conflictNum = 0
 			} else if e.commit && p.useClientSlots && e.command.Key != r.Command.Key {
 				reply := paxi.Reply{
 					Command:    r.Command,
@@ -477,12 +462,12 @@ func (p *FastPaxos) HandleP2aFastLeader(m P2a, r *paxi.Request, tsReq int64) {
 		} else {
 			log.Debugf("Replica %s HandleP2aFastLeader adding command %v to log \n", p.ID(), m.Command)
 			p.log[m.Slot] = &entry{
-				ballot:  m.Ballot,
-				subballot: 0,
-				command: m.Command,
-				commit:  false,
-				quorum:    paxi.NewQuorum(),
-				timestamp: time.Now(),
+				ballot:      m.Ballot,
+				conflictNum: 0,
+				command:     m.Command,
+				commit:      false,
+				quorum:      paxi.NewQuorum(),
+				timestamp:   time.Now(),
 			}
 		}
 
@@ -505,7 +490,7 @@ func (p *FastPaxos) HandleP2aFastLeader(m P2a, r *paxi.Request, tsReq int64) {
 			}
 		}
 
-		p2b := P2b{ID:p.ID(), Ballot: m.Ballot, Subballot: 0, Command: m.Command, Slot:m.Slot}
+		p2b := P2b{ID:p.ID(), Ballot: m.Ballot, ConflicNum: 0, Command: m.Command, Slot:m.Slot}
 		p.HandleP2b(p2b)
 
 	} else if m.Ballot > p.ballot {
@@ -519,7 +504,7 @@ func (p *FastPaxos) HandleP2b(m P2b) {
 	log.Debugf("Replica %s ===[%v]===>>> Replica %s\n", m.ID, m, p.ID())
 
 	// reject message
-	// node update its ballot number and falls back to acceptor
+	// node update its ballot number and falls back to the acceptor state
 	if m.Ballot > p.ballot {
 		p.ballot = m.Ballot
 		p.active = false
@@ -528,21 +513,24 @@ func (p *FastPaxos) HandleP2b(m P2b) {
 
 	logentry, exist := p.log[m.Slot]
     if exist && logentry.commit {
-    	// ignoring already commited slot
+    	// ignoring already committed entry
     	return
 	}
 
-	if p.IsFastBallot && m.Subballot == 0 {
-		// now add this P2b to list of P2bs we have collected so far on this slot
-		log.Debugf("Replica %s Adding P2b %v to p2bRepliesBySlot %d\n", p.ID(), m, m.Slot)
-		p2votes, p2bsExist := p.p2bRepliesBySlot[m.Slot]
+	if p.IsFastBallot && m.ConflicNum == 0 {
+		// add this P2b to list of P2bs we have collected so far on this slot
+		log.Debugf("Replica %s Adding P2b %v to p2bCommandVotes %d\n", p.ID(), m, m.Slot)
+		p2votes, p2bsExist := p.p2bCommandVotes[m.Slot]
 		if !p2bsExist {
-			p.p2bRepliesBySlot[m.Slot] = make([]*p2vote, 0)
+			p.p2bCommandVotes[m.Slot] = make([]*p2vote, 0)
 		}
 
 		voteApplied := false
 		quorumMet := false
 
+		// loop through all unique operations we have in this slot so far, and apply a vote if msg m contains one
+		// of these operations. Then count quorum on the operation and see we have reaches fast quorum
+		// here we assume operations equality as having the same key and value
 		for _, p2v := range p2votes {
 			if p2v.Cmd.Key == m.Command.Key && bytes.Equal(p2v.Cmd.Value, m.Command.Value) {
 				p2v.Q.ACK(m.ID)
@@ -550,14 +538,14 @@ func (p *FastPaxos) HandleP2b(m P2b) {
 				voteApplied = true
 				if p.Q2f(p2v.Q) {
 					quorumMet = true
-					// we have fast quorum on this slot
+					// we have a fast quorum on this slot
 					p.log[m.Slot] = &entry{
-						ballot:  m.Ballot,
-						subballot: 0,
-						command: m.Command,
-						commit:  true,
-						quorum:    p2v.Q,
-						timestamp: time.Now(),
+						ballot:      m.Ballot,
+						conflictNum: 0,
+						command:     m.Command,
+						commit:      true,
+						quorum:      p2v.Q,
+						timestamp:   time.Now(),
 					}
 
 					if p.ReplyWhenCommit {
@@ -569,20 +557,24 @@ func (p *FastPaxos) HandleP2b(m P2b) {
 			}
 		}
 
+		// the operation in msg m was not something we have seen yet, so add it to the list of votes with 1 vote
 		if !voteApplied {
 			p2v := p2vote{Cmd: m.Command, Q: paxi.NewQuorum()}
 			p2v.Q.ACK(m.ID)
 			log.Debugf("Replica %s applying vote for msg %v on never before seen slot %d for a total of %d\n", p.ID(), m, m.Slot, p2v.Q.Size())
-			p.p2bRepliesBySlot[m.Slot] = append(p.p2bRepliesBySlot[m.Slot], &p2v)
+			p.p2bCommandVotes[m.Slot] = append(p.p2bCommandVotes[m.Slot], &p2v)
 		}
 
-		if !quorumMet && (!exist || (exist && logentry.subballot == 0)) {
+		// finally, if we have no quorum after processing msg m, we check if there is still a chance to
+		// get to a fast quorum. If fast quorum is no longer possible, we start recovery immediately.
+		// for recovery we pick the value with the most votes
+		if !quorumMet && (!exist || (exist && logentry.conflictNum == 0)) {
 			if p.hasConflict(m.Slot) {
 				// do conflict round
 				cmd := p.p1bResultFromP2bFast(m.Slot)
 				if cmd != nil {
 					log.Infof("Conflict detected on slot %d, starting classical round to resolve. cmd: %v", m.Slot, cmd)
-					p.subballot++
+					p.conflictTotal++
 					p.P2aRetry(cmd, m.Slot)
 				}
 			}
@@ -613,7 +605,7 @@ func (p *FastPaxos) HandleP2b(m P2b) {
 }
 
 func (p *FastPaxos) hasConflict(slot int) bool {
-	p2votes, p2bsExist := p.p2bRepliesBySlot[slot]
+	p2votes, p2bsExist := p.p2bCommandVotes[slot]
 	if p2bsExist {
 		totalVotes := 0
 		maxQfAckSize := 0
@@ -624,7 +616,6 @@ func (p *FastPaxos) hasConflict(slot int) bool {
 			}
 		}
 		n := paxi.GetConfig().N()
-		//QfSize := p.quorum.FastQuorumSize()
 		if n - totalVotes < p.Q2fSize - maxQfAckSize {
 			log.Debugf("Conflict Detected on slot %d: n: %d, totalVotes: %d, QfSize: %d, maxQfAckSize: %d", slot, n, totalVotes, p.Q2fSize, maxQfAckSize)
 			return true // it is no longer possible to form a fast quorum
@@ -637,10 +628,10 @@ func (p *FastPaxos) hasConflict(slot int) bool {
 
 /**
 this function takes p2bs from fast round and treats them as p1bs for classical round for recovery
-the output of this function is the command to propose in classical P2
+the output of this function is the command to prepare in classical P2
  */
 func (p *FastPaxos) p1bResultFromP2bFast(slot int) *paxi.Command{
-	p2votes, p2bsExist := p.p2bRepliesBySlot[slot]
+	p2votes, p2bsExist := p.p2bCommandVotes[slot]
 	if p2bsExist {
 		totalVotes := 0
 		maxQfAckSize := 0
@@ -653,8 +644,6 @@ func (p *FastPaxos) p1bResultFromP2bFast(slot int) *paxi.Command{
 			}
 		}
 		n := paxi.GetConfig().N()
-		//QfSize := *p2qf //p.quorum.FastQuorumSize()
-		//QcSize := *p2qc //p.quorum.MajoritySize()
 		log.Debugf("p1bResultFromP2bFast. totalVotes: %d, maxQfAckSize: %d, QcSize: %d", totalVotes, maxQfAckSize, p.Q2cSize)
 		if totalVotes >= p.Q2cSize && maxQfAckSize > n - p.Q2fSize {
 			// we have at least Qc size of replies, so we can pick a safe value if there is one
@@ -673,8 +662,8 @@ func (p *FastPaxos) replyOnCommit(cmd paxi.Command) {
 	}
 
 	if p.execute > 100 {
-		if _, exists := p.p2bRepliesBySlot[p.execute - 100]; exists {
-			delete(p.p2bRepliesBySlot, p.execute - 100)
+		if _, exists := p.p2bCommandVotes[p.execute - 100]; exists {
+			delete(p.p2bCommandVotes, p.execute - 100)
 		}
 	}
 	p.execute++
@@ -697,12 +686,12 @@ func (p *FastPaxos) exec() {
 			p.replyIfPossible()
 		}
 
-		// TODO clean up the log periodically
-		if p.execute > 100 {
-			if _, exists := p.p2bRepliesBySlot[p.execute - 100]; exists {
-				delete(p.p2bRepliesBySlot, p.execute - 100)
+		// TODO clean up the log periodically instead of using some slack value
+		if p.execute > cleanupSlack {
+			if _, exists := p.p2bCommandVotes[p.execute - cleanupSlack]; exists {
+				delete(p.p2bCommandVotes, p.execute - cleanupSlack)
 			}
-			delete(p.log, p.execute - 100)
+			delete(p.log, p.execute - cleanupSlack)
 		}
 		p.execute++
 	}
@@ -769,6 +758,13 @@ func (p *FastPaxos) enforceTimeoutOnAllOutstandingRequests() {
 	}
 }
 
+
+/**
+ * Sometimes a request from client may never get executed, due to conflict handling. In order to not block the
+ * Benchmark, we reply nack to the client to allow it to proceed.
+ * TODO: Of course, a better solution would be to do a conflict resolve in a way that does not cause this
+ * and implement a proper state machine
+ */
 func (p *FastPaxos) requestTimeout(r *paxi.Request, refTime int64) bool {
 	log.Debugf("Replica %s request cmd %v, with timestamp %d, expire on %d\n", p.ID(), r.Command, r.Timestamp, refTime)
 	if r.Timestamp < refTime {
