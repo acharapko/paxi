@@ -31,3 +31,8 @@ having a perfect, gap-free log for the state machine.
 
 Further improvement will add a full RSM implementation.
 
+## What is missing?
+
+**This does not implement recovery of slots upon leader chage**
+Currenly, this only handles the "happy" case with no real leader change supported beyond the initial leader election
+
