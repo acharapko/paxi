@@ -6,7 +6,6 @@ import (
 
 	"github.com/ailidani/paxi"
 	"github.com/ailidani/paxi/log"
-	"math/rand"
 )
 
 // Client overwrites read operation for Paxos
@@ -16,16 +15,10 @@ type Client struct {
 }
 
 func NewClient(id paxi.ID) *Client {
+	log.Infof("Starting Fast Paxos Client with id %v", id)
 	return &Client{
 		HTTPClient: paxi.NewHTTPClient(id),
 	}
-}
-
-func (c *Client) IncrementCID() int {
-	if rand.Intn(100) >= paxi.GetConfig().Benchmark.CIDConflicts {
-		c.HTTPClient.IncrementCID()
-	}
-	return c.CID
 }
 
 func (c *Client) Get(key paxi.Key) (paxi.Value, error) {

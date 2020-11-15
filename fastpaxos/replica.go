@@ -30,8 +30,9 @@ func NewReplica(id paxi.ID) *Replica {
 	r.Register(paxi.Request{}, r.handleRequest)
 	r.Register(P1a{}, r.HandleP1a)
 	r.Register(P1b{}, r.HandleP1b)
-	r.Register(P2a{}, r.HandleP2a)
+	r.Register(P2a{}, r.HandleP2aFollower)
 	r.Register(P2b{}, r.HandleP2b)
+	r.Register(P3{}, r.HandleP3)
 	return r
 }
 

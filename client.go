@@ -20,7 +20,7 @@ type Client interface {
 	Put(Key, Value) error
 }
 
-// AdminClient interface provides fault injection opeartion
+// AdminClient interface provides fault injection operation
 type AdminClient interface {
 	Consensus(Key) bool
 	Crash(ID, int)
@@ -108,9 +108,9 @@ func (c *HTTPClient) GetURL(id ID, key Key) string {
 
 // rest accesses server's REST API with url = http://ip:port/key
 // if value == nil, it's a read
-func (c *HTTPClient) rest(id ID, key Key, value Value, cid int) (Value, map[string]string, error) {
+func (c *HTTPClient) rest(to ID, key Key, value Value, cid int) (Value, map[string]string, error) {
 	// get url
-	url := c.GetURL(id, key)
+	url := c.GetURL(to, key)
 
 	method := http.MethodGet
 	var body io.Reader
@@ -147,9 +147,9 @@ func (c *HTTPClient) rest(id ID, key Key, value Value, cid int) (Value, map[stri
 			return nil, metadata, err
 		}
 		if value == nil {
-			log.Debugf("node=%v type=%s key=%v value=%x", id, method, key, Value(b))
+			log.Debugf("node=%v type=%s key=%v value=%x", to, method, key, Value(b))
 		} else {
-			log.Debugf("node=%v type=%s key=%v value=%x", id, method, key, value)
+			log.Debugf("node=%v type=%s key=%v value=%x", to, method, key, value)
 		}
 		return Value(b), metadata, nil
 	}

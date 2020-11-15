@@ -3,6 +3,7 @@ package paxi
 import (
 	"encoding/gob"
 	"fmt"
+	"math/rand"
 	"net"
 	"time"
 
@@ -83,4 +84,14 @@ func ConnectToMaster(addr string, client bool, id ID) {
 	if err != nil {
 		log.Fatal(err)
 	}
+}
+
+const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+func GenerateRandVal(n int) []byte {
+	bts := make([]byte, n)
+	for i := range bts {
+		bts[i] = letterBytes[rand.Intn(len(letterBytes))]
+	}
+	return bts
 }

@@ -1,5 +1,7 @@
 package paxi
 
+import "fmt"
+
 // Quorum records each acknowledgement and check for different types of quorum satisfied
 type Quorum struct {
 	size  int
@@ -37,6 +39,12 @@ func (q *Quorum) NACK(id ID) {
 // ADD increase ack size by one
 func (q *Quorum) ADD() {
 	q.size++
+}
+
+func (q *Quorum) AddFromQuorum(q2 *Quorum) {
+	for id, _ := range q2.acks {
+		q.ACK(id)
+	}
 }
 
 // Size returns current ack size
@@ -167,3 +175,25 @@ func (q *Quorum) Q2() bool {
 	}
 }
 */
+
+func (q *Quorum) Clone() *Quorum {
+	clone := &Quorum{
+		size:  q.size,
+	}
+
+	clone.acks = make(map[ID]bool, len(q.acks))
+	for id, v := range q.acks {
+		clone.acks[id] = v
+	}
+
+	clone.zones = make(map[int]int, len(q.zones))
+	for zone, v := range q.zones {
+		clone.zones[zone] = v
+	}
+
+	return clone
+}
+
+func (q Quorum) String() string {
+	return fmt.Sprintf("|Q|=%d", q.size)
+}

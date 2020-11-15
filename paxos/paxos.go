@@ -229,7 +229,7 @@ func (p *Paxos) HandleP1b(m P1b) {
 	}
 }
 
-// HandleP2a handles P2a message
+// HandleP2aFollower handles P2a message
 func (p *Paxos) HandleP2a(m P2a) {
 	// log.Debugf("Replica %s ===[%v]===>>> Replica %s\n", m.Ballot.ID(), m, p.ID())
 
@@ -242,7 +242,7 @@ func (p *Paxos) HandleP2a(m P2a) {
 		if e, exists := p.log[m.Slot]; exists {
 			if !e.commit && m.Ballot > e.ballot {
 				// different command and request is not nil
-				if !e.command.Equal(m.Command) && e.request != nil {
+				if !e.command.Equal(&m.Command) && e.request != nil {
 					p.Forward(m.Ballot.ID(), *e.request)
 					// p.Retry(*e.request)
 					e.request = nil
@@ -317,7 +317,7 @@ func (p *Paxos) HandleP3(m P3) {
 
 	e, exist := p.log[m.Slot]
 	if exist {
-		if !e.command.Equal(m.Command) && e.request != nil {
+		if !e.command.Equal(&m.Command) && e.request != nil {
 			// p.Retry(*e.request)
 			p.Forward(m.Ballot.ID(), *e.request)
 			e.request = nil
