@@ -24,15 +24,26 @@ Under Fast Paxos we Include:
 
 ## What is implemented?
 
-Currently, we do not implement a full Replicated State Machine (RSM), 
-and instead implement a version of Fast (Flexible) Paxos that decides
-on many different instance of consensus under the same leader without
-having a perfect, gap-free log for the state machine. 
-
-Further improvement will add a full RSM implementation.
+This implementation is a stripped-down prototype of Fast Flexible Paxos as used in a Replicated State Machine(RSM). 
+RSM uses a log to ensure the same operations are applied to each replica in the same order. Fast Paxos RSM tries to
+commit each slot in a fast quorum, and whenever fast quorum on a slot is not possible, it resolves the slot 
+using the leader conflict resolution of Fast Paxos. RSM implementation ensures that each command appears in at most 
+one slot.
 
 ## What is missing?
 
-**This does not implement recovery of slots upon leader chage**
-Currenly, this only handles the "happy" case with no real leader change supported beyond the initial leader election
+**So far we implement a happy case and the RSM stalls when a fast quorum of nodes in not available**
+
+The fix should be an easy time-out to check if enough nodes have replied on some slot, and if not, force the resolution
+
+## How to Run?
+
+./server -log_dir=logs -log_level=info -id $1 -algorithm=fastpaxos -p1q=$2 -p2qf=$3 -p2qc=$4 
+
+- p1q is the size of phase-1 quorum
+- p2qf is the size of phase-2 fast quorum
+- p2qc is the size of phase-2 classic quorum
+
+To run as regular Fast Paxos, adjust the quorum size accordingly
+
 
