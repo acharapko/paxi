@@ -60,8 +60,6 @@ type FastPaxos struct {
 	Q2fSize			int
 	Q2cSize			int
 
-	useClientSlots  bool // we use this for testing. Let clients set the slots to control the rate of conflict
-
 	ReplyWhenCommit bool
 
 	sync.RWMutex
@@ -69,7 +67,7 @@ type FastPaxos struct {
 
 // NewPaxos creates new paxos instance
 func NewPaxos(n paxi.Node, options ...func(paxos *FastPaxos)) *FastPaxos {
-	log.Infof("FastPaxos is starting on node %v. Use ClientSlots: %v", n.ID(), *clientslots)
+	log.Infof("FastPaxos is starting on node %v.", n.ID(),)
 	p := &FastPaxos{
 		Node:            n,
 		nodeCount:       paxi.GetConfig().N(),
@@ -78,7 +76,6 @@ func NewPaxos(n paxi.Node, options ...func(paxos *FastPaxos)) *FastPaxos {
 		quorum:          paxi.NewQuorum(),
 		requests:        make(map[UniqueCommandId]*paxi.Request, paxi.GetConfig().BufferSize),
 		ReplyWhenCommit: false,
-		useClientSlots:  *clientslots,
 		pendingRequests: make([]*paxi.Request, 0),
 	}
 
@@ -181,12 +178,7 @@ func (p *FastPaxos) HandleRequest(r paxi.Request) {
 		// in FastBallot we receive requests form clients directly
 		// and accept them
 		log.Debugf("Replica %s on ballot %v handles request in Fast Mode %v\n", p.ID(), p.ballot)
-		var p2aMsg P2a
-		if p.useClientSlots {
-			p2aMsg = P2a{Ballot: p.ballot, Slot: r.Command.CommandID, Command: r.Command, fromClient: true}
-		} else {
-			p2aMsg = P2a{Ballot: p.ballot, Slot: p.advanceSlot(), Command: r.Command, fromClient: true}
-		}
+		p2aMsg := P2a{Ballot: p.ballot, Slot: p.advanceSlot(), Command: r.Command, fromClient: true}
 		if p.IsLeader() {
 			p.requests[UniqueCommandIdFromCommand(&r.Command)] = &r
 			p.HandleP2aFastLeader(p2aMsg)
@@ -433,13 +425,16 @@ func (p *FastPaxos) HandleP1b(m P1b) {
 
 			// periodically re-elect the leader, to sync all nodes to the same slot number and resolve any unresolved slots
 			log.Debugf("Node %v is scheduling a re-election timer", p.ID())
-			reelectionTimer := time.NewTimer(time.Duration(500) * time.Millisecond)
-			go func() {
-				<-reelectionTimer.C
-				log.Debugf("Re-election triggered on node %v", p.ID())
-				p.active = false
-				p.P1a()
-			}()
+
+			if *reelectiontime > 0 {
+				reelectionTimer := time.NewTimer(time.Duration(*reelectiontime) * time.Millisecond)
+				go func() {
+					<-reelectionTimer.C
+					log.Debugf("Re-election triggered on node %v", p.ID())
+					p.active = false
+					p.P1a()
+				}()
+			}
 		}
 	}
 }
