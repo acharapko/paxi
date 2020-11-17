@@ -22,30 +22,30 @@ type Command struct {
 	CommandID int
 }
 
-func (c Command) Empty() bool {
+func (c *Command) Empty() bool {
 	if c.Key == 0 && c.Value == nil && c.ClientID == "" && c.CommandID == 0 {
 		return true
 	}
 	return false
 }
 
-func (c Command) IsRead() bool {
+func (c *Command) IsRead() bool {
 	return c.Value == nil
 }
 
-func (c Command) IsWrite() bool {
+func (c *Command) IsWrite() bool {
 	return c.Value != nil
 }
 
-func (c Command) Equal(a Command) bool {
-	return c.Key == a.Key && bytes.Equal(c.Value, a.Value) && c.ClientID == a.ClientID && c.CommandID == a.CommandID
+func (c *Command) Equal(a *Command) bool {
+	return c.ClientID == a.ClientID && c.CommandID == a.CommandID && c.Key == a.Key && bytes.Equal(c.Value, a.Value)
 }
 
 func (c Command) String() string {
 	if c.Value == nil {
-		return fmt.Sprintf("Get{key=%v id=%s cid=%d}", c.Key, c.ClientID, c.CommandID)
+		return fmt.Sprintf("Get{key=%v client_id=%s cid=%d}", c.Key, c.ClientID, c.CommandID)
 	}
-	return fmt.Sprintf("Put{key=%v value=%x id=%s cid=%d", c.Key, c.Value, c.ClientID, c.CommandID)
+	return fmt.Sprintf("Put{key=%v value=%x client_id=%s cid=%d}", c.Key, c.Value, c.ClientID, c.CommandID)
 }
 
 // Database defines a database interface

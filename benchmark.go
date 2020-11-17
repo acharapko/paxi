@@ -30,7 +30,6 @@ type Bconfig struct {
 
 	// conflict distribution
 	Conflicts int // percentage of conflicting keys
-	CIDConflicts int // percentage of conflicting command IDs
 	Min       int // min key
 
 	// normal distribution
@@ -59,7 +58,6 @@ func DefaultBConfig() Bconfig {
 		Distribution:         "uniform",
 		LinearizabilityCheck: true,
 		Conflicts:            100,
-		CIDConflicts:         0,
 		Min:                  0,
 		Mu:                   0,
 		Sigma:                60,

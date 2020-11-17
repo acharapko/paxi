@@ -11,23 +11,23 @@ if [ -z "${PID}" ]; then
     go build ../cmd/
     rm -r logs
     mkdir logs/
-    ./server -log_dir=logs -log_level=debug -id 1.1 -algorithm=fastpaxos -p1q=8 -p2qf=6 -p2qc=5 -clientslots=true >logs/out1.1.txt 2>&1 &
+    ./server -log_dir=logs -log_level=debug -id 1.1 -algorithm=fastpaxos -p1q=8 -p2qf=6 -p2qc=5 -reelectiontime=0 >logs/out1.1.txt 2>&1 &
     echo $! >> ${PID_FILE}
-    ./server -log_dir=logs -log_level=debug -id 1.2 -algorithm=fastpaxos -p1q=8 -p2qf=6 -p2qc=5 -clientslots=true >logs/out1.2.txt 2>&1 &
+    ./server -log_dir=logs -log_level=debug -id 1.2 -algorithm=fastpaxos -p1q=8 -p2qf=6 -p2qc=5 -reelectiontime=0 >logs/out1.2.txt 2>&1 &
     echo $! >> ${PID_FILE}
-    ./server -log_dir=logs -log_level=debug -id 1.3 -algorithm=fastpaxos -p1q=8 -p2qf=6 -p2qc=5 -clientslots=true >logs/out1.3.txt 2>&1 &
+    ./server -log_dir=logs -log_level=debug -id 1.3 -algorithm=fastpaxos -p1q=8 -p2qf=6 -p2qc=5 -reelectiontime=0 >logs/out1.3.txt 2>&1 &
     echo $! >> ${PID_FILE}
-    ./server -log_dir=logs -log_level=debug -id 1.4 -algorithm=fastpaxos -p1q=8 -p2qf=6 -p2qc=5 -clientslots=true >logs/out2.1.txt 2>&1 &
+    ./server -log_dir=logs -log_level=debug -id 1.4 -algorithm=fastpaxos -p1q=8 -p2qf=6 -p2qc=5 -reelectiontime=0 >logs/out2.1.txt 2>&1 &
     echo $! >> ${PID_FILE}
-    ./server -log_dir=logs -log_level=debug -id 1.5 -algorithm=fastpaxos -p1q=8 -p2qf=6 -p2qc=5 -clientslots=true >logs/out2.2.txt 2>&1 &
+    ./server -log_dir=logs -log_level=debug -id 1.5 -algorithm=fastpaxos -p1q=8 -p2qf=6 -p2qc=5 -reelectiontime=0 >logs/out2.2.txt 2>&1 &
     echo $! >> ${PID_FILE}
-    ./server -log_dir=logs -log_level=debug -id 1.6 -algorithm=fastpaxos -p1q=8 -p2qf=6 -p2qc=5 -clientslots=true >logs/out2.3.txt 2>&1 &
+    ./server -log_dir=logs -log_level=debug -id 1.6 -algorithm=fastpaxos -p1q=8 -p2qf=6 -p2qc=5 -reelectiontime=0 >logs/out2.3.txt 2>&1 &
     echo $! >> ${PID_FILE}
-    ./server -log_dir=logs -log_level=debug -id 1.7 -algorithm=fastpaxos -p1q=8 -p2qf=6 -p2qc=5 -clientslots=true >logs/out3.1.txt 2>&1 &
+    ./server -log_dir=logs -log_level=debug -id 1.7 -algorithm=fastpaxos -p1q=8 -p2qf=6 -p2qc=5 -reelectiontime=0 >logs/out3.1.txt 2>&1 &
     echo $! >> ${PID_FILE}
-    ./server -log_dir=logs -log_level=debug -id 1.8 -algorithm=fastpaxos -p1q=8 -p2qf=6 -p2qc=5 -clientslots=true >logs/out3.2.txt 2>&1 &
+    ./server -log_dir=logs -log_level=debug -id 1.8 -algorithm=fastpaxos -p1q=8 -p2qf=6 -p2qc=5 -reelectiontime=0 >logs/out3.2.txt 2>&1 &
     echo $! >> ${PID_FILE}
-    ./server -log_dir=logs -log_level=debug -id 1.9 -algorithm=fastpaxos -p1q=8 -p2qf=6 -p2qc=5 -clientslots=true >logs/out3.3.txt 2>&1 &
+    ./server -log_dir=logs -log_level=debug -id 1.9 -algorithm=fastpaxos -p1q=8 -p2qf=6 -p2qc=5 -reelectiontime=0 >logs/out3.3.txt 2>&1 &
     echo $! >> ${PID_FILE}
 else
     echo "Servers are already started in this folder."

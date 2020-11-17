@@ -193,7 +193,7 @@ func (p *Paxos) HandleP2a(m P2a) {
 
 	// new leader for slot
 	if m.Ballot >= e.ballot {
-		if e.request != nil && !e.command.Equal(m.Command) {
+		if e.request != nil && !e.command.Equal(&m.Command) {
 			p.retry(m.Slot, m.Ballot)
 		}
 		e.ballot = m.Ballot
@@ -249,7 +249,7 @@ func (p *Paxos) HandleP3(m P3) {
 
 	e, exist := p.log[m.Slot]
 	if exist {
-		if !e.command.Equal(m.Command) && e.request != nil {
+		if !e.command.Equal(&m.Command) && e.request != nil {
 			p.retry(m.Slot, m.Ballot)
 		}
 	} else {
